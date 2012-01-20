@@ -11,8 +11,8 @@ The only dependency is numpy, which is used to perform all
 expensive operations. The code is quite fast, however much better
 performance can be achieved using the Theano version of this code.
 
-Created by Yann N. Dauphin on 2012-01-17.
-Copyright (c) 2012 Yann N. Dauphin. All rights reserved.
+Created by Yann N. Dauphin, Salah Rifai on 2012-01-17.
+Copyright (c) 2012 Yann N. Dauphin, Salah Rifai. All rights reserved.
 """
 
 import sys
