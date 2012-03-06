@@ -17,7 +17,7 @@ Copyright (c) 2012 Yann N. Dauphin, Salah Rifai. All rights reserved.
 
 import sys
 import os
-
+import pdb
 import numpy
 
 
@@ -31,10 +31,10 @@ class CAE(object):
                        c=None,
                        b=None,
                        learning_rate=0.1,
-                       batch_size=10,
+                       batch_size=2,
                        epochs=20):
         """
-        Initialize an RBM.
+        Initialize a CAE.
         
         Parameters
         ----------
@@ -88,7 +88,7 @@ class CAE(object):
         -------
         h: array-like, shape (n_samples, n_hiddens)
         """
-        return self._sigmoid(numpy.dot(v, self.W) + self.c)
+        return self._sigmoid(numpy.dot(x, self.W) + self.c)
     
     def decode(self, h):
         """
@@ -148,8 +148,8 @@ class CAE(object):
         z = self.reconstruct(x)
         
         j = self.jacobian(x)
-        
-        return x * numpy.log(z) + (1 - x) * numpy.log(1 - z) + (j**2).mean(1).mean(1)
+        #pdb.set_trace()
+        return - (x * numpy.log(z) + (1 - x) * numpy.log(1 - z)).sum(1) + (j**2).sum(2).sum(1)
     
     def _fit(self, v_pos):
         """
@@ -160,7 +160,18 @@ class CAE(object):
         ----------
         v_pos: array-like, shape (n_samples, n_visibles)
         """
-        pass
+        def _fit_contraction():
+            """
+            Compute the gradient of the contraction cost w.r.t parameters.
+            """
+            h = self.encode(v_pos)
+
+            a = (h * (1 - h))**2 
+            b = v_pos[:,:,numpy.newaxis] * ((1 - 2 * h) * a * (self.W**2).sum(0)[numpy.newaxis,:])[:,numpy.newaxis,:]
+            c = a[:,numpy.newaxis,:] * self.W
+            self.W += self.learning_rate * (-b-c).mean(0)
+            
+        return _fit_contraction()
     
     def fit(self, X, verbose=False):
         """
@@ -179,13 +190,12 @@ class CAE(object):
                 size=(X.shape[1], self.n_hiddens))
             self.c = numpy.zeros(self.n_hiddens)
             self.b = numpy.zeros(X.shape[1])
-            self.h_samples = numpy.zeros((self.n_samples, self.n_hiddens))
         
         inds = range(X.shape[0])
         
         numpy.random.shuffle(inds)
         
-        n_batches = len(inds) / self.n_samples
+        n_batches = len(inds) / self.batch_size
         
         for epoch in range(self.epochs):
             for minibatch in range(n_batches):
