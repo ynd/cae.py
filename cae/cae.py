@@ -17,6 +17,7 @@ Copyright (c) 2012 Yann N. Dauphin, Salah Rifai. All rights reserved.
 
 import sys
 import os
+import pdb
 import numpy
 
 
@@ -25,13 +26,15 @@ class CAE(object):
     A Contrative Auto-Encoder (CAE) with sigmoid input units and sigmoid
     hidden units.
     """
-    def __init__(self, n_hiddens=1024,
-                       W=None,
-                       c=None,
-                       b=None,
-                       learning_rate=0.1,
-                       batch_size=2,
-                       epochs=20):
+    def __init__(self, 
+                 n_hiddens=1024,
+                 W=None,
+                 c=None,
+                 b=None,
+                 learning_rate=0.001,
+                 jacobi_penalty=0.1,
+                 batch_size=10,
+                 epochs=200):
         """
         Initialize a CAE.
         
@@ -58,6 +61,7 @@ class CAE(object):
         self.c = c
         self.b = b
         self.learning_rate = learning_rate
+        self.jacobi_penalty = jacobi_penalty
         self.batch_size = batch_size
         self.epochs = epochs
     
@@ -135,8 +139,10 @@ class CAE(object):
     
     def loss(self, x):
         """
-        Computes the energy of {x} which is the 
-        Parameters
+        Computes the error of the model with respect
+        
+        to the total cost.
+        
         ----------
         v: array-like, shape (n_samples, n_inputs)
         
@@ -144,37 +150,76 @@ class CAE(object):
         -------
         free_energy: array-like, shape (n_samples,)
         """
-        z = self.reconstruct(x)
-        
-        j = self.jacobian(x)
-
-        return - (x * numpy.log(z) + (1 - x) * numpy.log(1 - z)).sum(1) + (j**2).sum(2).sum(1)
-    
-    def _fit(self, v_pos):
+        def _reconstruction_loss():
         """
-        Adjust the parameters to maximize the likelihood of {\bf v}
-        using Stochastic Maximum Likelihood (SML).
+        Computes the error of the model with respect
+        
+        to the reconstruction (cross-entropy) cost.
+        
+        """
+            z = self.reconstruct(x)
+            return (- (x * numpy.log(z) + (1 - x) * numpy.log(1 - z)).sum(1)).mean()
+
+        def _jacobi_loss():
+        """
+        Computes the error of the model with respect
+        
+        the Frobenius norm of the jacobian.
+        
+        """
+            j = self.jacobian(x)
+            return (j**2).sum(2).sum(1).mean()
+
+        return _reconstruction_loss() + self.jacobi_penalty * _jacobi_loss()
+    
+    def _fit(self, x):
+        """
+        TODO
         
         Parameters
         ----------
-        v_pos: array-like, shape (n_samples, n_visibles)
+        x: array-like, shape (n_samples, n_visibles)
         """
         def _fit_contraction():
             """
             Compute the gradient of the contraction cost w.r.t parameters.
             """
-            h = self.encode(v_pos)
+            h = self.encode(x)
 
             a = (h * (1 - h))**2 
 
-            b = v_pos[:,:,numpy.newaxis] * ((1 - 2 * h) * a * (self.W**2).sum(0)[numpy.newaxis,:])[:,numpy.newaxis,:]
+            b = x[:,:,numpy.newaxis] * ((1 - 2 * h) * a * (self.W**2).sum(0)[numpy.newaxis,:])[:,numpy.newaxis,:]
 
             c = a[:,numpy.newaxis,:] * self.W
 
-            self.W += self.learning_rate * (-b-c).mean(0)
+            return (b+c).mean(0)
             
-        return _fit_contraction()
-    
+        def _fit_reconstruction():
+            """                                                                 
+            Compute the gradient of the reconstruction cost w.r.t parameters.      
+            """
+
+            h = self.encode(x)
+            r = self.decode(h)
+
+            dedr = -( x/r - (1 - x)/(1 - r) ) 
+
+            a = r*(1-r)
+            b = h*(1-h)
+            
+            od = a * dedr
+            oe = b * numpy.dot(od, self.W)
+
+            gW = b * oe
+
+            return gW.mean(0),od.mean(0),oe.mean(0)
+
+        W_rec,b_rec,c_rec = _fit_reconstruction()
+        self.W -= self.learning_rate * ((W_rec) + self.jacobi_penalty * _fit_contraction())
+        self.b -= self.learning_rate * b_rec 
+        self.c -= self.learning_rate * c_rec
+
+
     def fit(self, X, verbose=False):
         """
         Fit the model to the data X.
@@ -205,7 +250,7 @@ class CAE(object):
             
             if verbose:
                 loss = self.loss(X).mean()
-            
+                sys.stdout.flush()
                 print "Epoch %d, Loss = %.2f" % (epoch, loss)
 
 
