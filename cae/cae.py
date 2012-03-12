@@ -143,7 +143,7 @@ class CAE(object):
         
         to the total cost.
         
-        ----------
+        -------
         v: array-like, shape (n_samples, n_inputs)
         
         Returns
@@ -151,22 +151,22 @@ class CAE(object):
         free_energy: array-like, shape (n_samples,)
         """
         def _reconstruction_loss():
-        """
-        Computes the error of the model with respect
-        
-        to the reconstruction (cross-entropy) cost.
-        
-        """
+            """
+            Computes the error of the model with respect
+            
+            to the reconstruction (cross-entropy) cost.
+            
+            """
             z = self.reconstruct(x)
             return (- (x * numpy.log(z) + (1 - x) * numpy.log(1 - z)).sum(1)).mean()
 
         def _jacobi_loss():
-        """
-        Computes the error of the model with respect
-        
-        the Frobenius norm of the jacobian.
-        
-        """
+            """
+            Computes the error of the model with respect
+            
+            the Frobenius norm of the jacobian.
+            
+            """
             j = self.jacobian(x)
             return (j**2).sum(2).sum(1).mean()
 
@@ -188,11 +188,13 @@ class CAE(object):
 
             a = (h * (1 - h))**2 
 
-            b = x[:,:,numpy.newaxis] * ((1 - 2 * h) * a * (self.W**2).sum(0)[numpy.newaxis,:])[:,numpy.newaxis,:]
+            d = ((1 - 2 * h) * a * (self.W**2).sum(0)[numpy.newaxis,:])
+
+            b = x[:,:,numpy.newaxis] * d[:,numpy.newaxis,:]
 
             c = a[:,numpy.newaxis,:] * self.W
 
-            return (b+c).mean(0)
+            return (b+c).mean(0),(d).mean(0)
             
         def _fit_reconstruction():
             """                                                                 
@@ -210,14 +212,15 @@ class CAE(object):
             od = a * dedr
             oe = b * numpy.dot(od, self.W)
 
-            gW = b * oe
+            gW = x[ :, :, numpy.newaxis ]  * oe[ :, numpy.newaxis, : ]
 
             return gW.mean(0),od.mean(0),oe.mean(0)
 
         W_rec,b_rec,c_rec = _fit_reconstruction()
-        self.W -= self.learning_rate * ((W_rec) + self.jacobi_penalty * _fit_contraction())
-        self.b -= self.learning_rate * b_rec 
-        self.c -= self.learning_rate * c_rec
+        W_jac,c_jac = _fit_contraction()
+        self.W -= self.learning_rate * (W_rec + self.jacobi_penalty * W_jac)
+        self.c -= self.learning_rate * (c_rec + self.jacobi_penalty * c_jac)
+        self.b -= self.learning_rate * b_rec
 
 
     def fit(self, X, verbose=False):
