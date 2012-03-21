@@ -6,7 +6,7 @@ cae.py
 A pythonic library for Contractive Auto-Encoders. This is
 for people who want to give CAEs a quick try and for people
 who want to understand how they are implemented. For this
-purpose I tried to make the code as simple and clean as possible.
+purpose we tried to make the code as simple and clean as possible.
 The only dependency is numpy, which is used to perform all
 expensive operations. The code is quite fast, however much better
 performance can be achieved using the Theano version of this code.
@@ -42,15 +42,18 @@ class CAE(object):
         ----------
         n_hiddens : int, optional
             Number of binary hidden units
-        W : array-like, shape (n_visibles, n_hiddens), optional
-            Weight matrix, where n_visibles in the number of visible
+        W : array-like, shape (n_inputs, n_hiddens), optional
+            Weight matrix, where n_inputs in the number of input
             units and n_hiddens is the number of hidden units.
         c : array-like, shape (n_hiddens,), optional
             Biases of the hidden units
-        b : array-like, shape (n_visibles,), optional
-            Biases of the visible units
+        b : array-like, shape (n_inputs,), optional
+            Biases of the input units
         learning_rate : float, optional
             Learning rate to use during learning
+        jacobi_penalty : float, optional
+            Scalar by which to multiply the gradients coming from the jacobian
+            penalty.
         batch_size : int, optional
             Number of examples to use per gradient update
         epochs : int, optional
@@ -85,11 +88,11 @@ class CAE(object):
         
         Parameters
         ----------
-        x: array-like, shape (n_samples, n_inputs)
+        x: array-like, shape (n_examples, n_inputs)
 
         Returns
         -------
-        h: array-like, shape (n_samples, n_hiddens)
+        h: array-like, shape (n_examples, n_hiddens)
         """
         return self._sigmoid(numpy.dot(x, self.W) + self.c)
     
@@ -99,11 +102,11 @@ class CAE(object):
         
         Parameters
         ----------
-        h: array-like, shape (n_samples, n_hiddens)
+        h: array-like, shape (n_examples, n_hiddens)
         
         Returns
         -------
-        v: array-like, shape (n_samples, n_inputs)
+        x: array-like, shape (n_examples, n_inputs)
         """
         return self._sigmoid(numpy.dot(h, self.W.T) + self.b)
     
@@ -113,11 +116,11 @@ class CAE(object):
         
         Parameters
         ----------
-        x: array-like, shape (n_samples, n_inputs)
+        x: array-like, shape (n_examples, n_inputs)
         
         Returns
         -------
-        x_new: array-like, shape (n_samples, n_inputs)
+        x_new: array-like, shape (n_examples, n_inputs)
         """
         return self.decode(self.encode(x))
     
@@ -127,28 +130,27 @@ class CAE(object):
         
         Parameters
         ----------
-        x: array-like, shape (n_samples, n_inputs)
+        x: array-like, shape (n_examples, n_inputs)
         
         Returns
         -------
-        jacobian: array-like, shape (n_samples, n_hiddens, n_inputs)
+        jacobian: array-like, shape (n_examples, n_hiddens, n_inputs)
         """
         h = self.encode(x)
         
-        return (h * (1 - h))[:, numpy.newaxis, :] * self.W[numpy.newaxis, : , :]
+        return (h * (1 - h))[:, :, None] * self.W.T
     
     def loss(self, x):
         """
         Computes the error of the model with respect
-        
         to the total cost.
         
         -------
-        v: array-like, shape (n_samples, n_inputs)
+        x: array-like, shape (n_examples, n_inputs)
         
         Returns
         -------
-        free_energy: array-like, shape (n_samples,)
+        loss: array-like, shape (n_examples,)
         """
         def _reconstruction_loss():
             """
@@ -174,11 +176,12 @@ class CAE(object):
     
     def _fit(self, x):
         """
-        TODO
+        Perform one step of gradient descent on the CAE objective using the
+        examples {\bf x}.
         
         Parameters
         ----------
-        x: array-like, shape (n_samples, n_visibles)
+        x: array-like, shape (n_examples, n_inputs)
         """
         def _fit_contraction():
             """
@@ -188,13 +191,13 @@ class CAE(object):
 
             a = (h * (1 - h))**2 
 
-            d = ((1 - 2 * h) * a * (self.W**2).sum(0)[numpy.newaxis,:])
+            d = ((1 - 2 * h) * a * (self.W**2).sum(0)[None, :])
 
-            b = x[:,:,numpy.newaxis] * d[:,numpy.newaxis,:]
+            b = x[:, :, None] * d[:, None, :]
 
-            c = a[:,numpy.newaxis,:] * self.W
+            c = a[:, None, :] * self.W
 
-            return (b+c).mean(0),(d).mean(0)
+            return (b+c).mean(0), (d).mean(0)
             
         def _fit_reconstruction():
             """                                                                 
@@ -212,12 +215,12 @@ class CAE(object):
             od = a * dedr
             oe = b * numpy.dot(od, self.W)
 
-            gW = x[ :, :, numpy.newaxis ]  * oe[ :, numpy.newaxis, : ]
+            gW = x[ :, :, None]  * oe[ :, None, : ]
 
-            return gW.mean(0),od.mean(0),oe.mean(0)
+            return gW.mean(0), od.mean(0), oe.mean(0)
 
-        W_rec,b_rec,c_rec = _fit_reconstruction()
-        W_jac,c_jac = _fit_contraction()
+        W_rec, b_rec, c_rec = _fit_reconstruction()
+        W_jac, c_jac = _fit_contraction()
         self.W -= self.learning_rate * (W_rec + self.jacobi_penalty * W_jac)
         self.c -= self.learning_rate * (c_rec + self.jacobi_penalty * c_jac)
         self.b -= self.learning_rate * b_rec
@@ -229,9 +232,9 @@ class CAE(object):
         
         Parameters
         ----------
-        X: array-like, shape (n_samples, n_features)
-            Training data, where n_samples in the number of samples
-            and n_features is the number of features.
+        X: array-like, shape (n_examples, n_inputs)
+            Training data, where n_examples in the number of examples
+            and n_inputs is the number of features.
         """
         if self.W == None:
             self.W = numpy.random.uniform(
