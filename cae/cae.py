@@ -140,6 +140,32 @@ class CAE(object):
         
         return (h * (1 - h))[:, :, None] * self.W.T
     
+    def sample(self, x, sigma=1)
+        """
+        Sample a point {\bf y} starting from {\bf x} using the CAE
+        generative process.
+        
+        Parameters
+        ----------
+        x: array-like, shape (n_examples, n_inputs)
+        sigma: float
+        
+        Returns
+        -------
+        y: array-like, shape (n_examples, n_inputs)
+        """
+        h = self.encode(x)
+        
+        s = h * (1. - h)
+        
+        JJ = numpy.dot(self.W.T, self.W) * s[:, None, :] * s[:, :, None]
+        
+        alpha = numpy.random.normal(0, sigma, h.shape)
+        
+        delta = (alpha[:, :, None] * JJ).sum(1)
+        
+        return self.decode(h + delta)
+    
     def loss(self, x):
         """
         Computes the error of the model with respect
