@@ -241,7 +241,7 @@ class CAE(object):
             od = a * dedr
             oe = b * numpy.dot(od, self.W)
 
-            gW = x[ :, :, None]  * oe[ :, None, : ]
+            gW = x[ :, :, None]  * oe[ :, None, : ] + od[:, :, None]*h[:, None, :]
 
             return gW.mean(0), od.mean(0), oe.mean(0)
 
