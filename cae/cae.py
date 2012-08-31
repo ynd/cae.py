@@ -219,11 +219,11 @@ class CAE(object):
 
             d = ((1 - 2 * h) * a * (self.W**2).sum(0)[None, :])
 
-            b = numpy.dot(x.T, d)
+            b = numpy.dot(x.T / x.shape[0], d)
 
-            c = a.sum(0) * self.W
+            c = a.mean(0) * self.W
 
-            return (b + c) / x.shape[0], d.mean(0)
+            return (b + c), d.mean(0)
             
         def _fit_reconstruction():
             """                                                                 
@@ -233,12 +233,12 @@ class CAE(object):
             h = self.encode(x)
             r = self.decode(h)
 
-            dr = r - x
+            dr = (r - x) / x.shape[0]
             dd = numpy.dot(dr.T, h)
             dh = numpy.dot(dr, self.W) * h * (1. - h)
             de = numpy.dot(x.T, dh)
 
-            return (dd + de) / x.shape[0], dr.mean(0), dh.mean(0)
+            return (dd + de), dr.sum(0), dh.sum(0)
 
         W_rec, b_rec, c_rec = _fit_reconstruction()
         W_jac, c_jac = _fit_contraction()
