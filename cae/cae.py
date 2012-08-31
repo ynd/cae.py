@@ -140,7 +140,7 @@ class CAE(object):
         
         return (h * (1 - h))[:, :, None] * self.W.T
     
-    def sample(self, x, sigma=1)
+    def sample(self, x, sigma=1):
         """
         Sample a point {\bf y} starting from {\bf x} using the CAE
         generative process.
@@ -219,11 +219,11 @@ class CAE(object):
 
             d = ((1 - 2 * h) * a * (self.W**2).sum(0)[None, :])
 
-            b = x[:, :, None] * d[:, None, :]
+            b = numpy.dot(x.T, d)
 
-            c = a[:, None, :] * self.W
+            c = a.sum(0) * self.W
 
-            return (b+c).mean(0), (d).mean(0)
+            return (b + c) / x.shape[0], d.mean(0)
             
         def _fit_reconstruction():
             """                                                                 
@@ -233,17 +233,12 @@ class CAE(object):
             h = self.encode(x)
             r = self.decode(h)
 
-            dedr = -( x/r - (1 - x)/(1 - r) ) 
+            dr = r - x
+            dd = numpy.dot(dr.T, h)
+            dh = numpy.dot(dr, self.W) * h * (1. - h)
+            de = numpy.dot(x.T, dh)
 
-            a = r*(1-r)
-            b = h*(1-h)
-            
-            od = a * dedr
-            oe = b * numpy.dot(od, self.W)
-
-            gW = x[ :, :, None]  * oe[ :, None, : ] + od[:, :, None]*h[:, None, :]
-
-            return gW.mean(0), od.mean(0), oe.mean(0)
+            return (dd + de) / x.shape[0], dr.mean(0), dh.mean(0)
 
         W_rec, b_rec, c_rec = _fit_reconstruction()
         W_jac, c_jac = _fit_contraction()
