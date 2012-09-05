@@ -17,8 +17,8 @@ Copyright (c) 2012 Yann N. Dauphin, Salah Rifai. All rights reserved.
 
 import sys
 import os
-import pdb
 import numpy
+import scipy.optimize
 
 
 class CAE(object):
@@ -28,13 +28,12 @@ class CAE(object):
     """
     def __init__(self, 
                  n_hiddens=1024,
-                 W=None,
-                 c=None,
-                 b=None,
-                 learning_rate=0.001,
                  jacobi_penalty=0.1,
-                 batch_size=10,
-                 epochs=200):
+                 W=None,
+                 b=None,
+                 c=None,
+                 batch_size=1000,
+                 epochs=1):
         """
         Initialize a CAE.
         
@@ -42,32 +41,29 @@ class CAE(object):
         ----------
         n_hiddens : int, optional
             Number of binary hidden units
-        W : array-like, shape (n_inputs, n_hiddens), optional
-            Weight matrix, where n_inputs in the number of input
-            units and n_hiddens is the number of hidden units.
-        c : array-like, shape (n_hiddens,), optional
-            Biases of the hidden units
-        b : array-like, shape (n_inputs,), optional
-            Biases of the input units
-        learning_rate : float, optional
-            Learning rate to use during learning
         jacobi_penalty : float, optional
             Scalar by which to multiply the gradients coming from the jacobian
             penalty.
+        W : array-like, shape (n_inputs, n_hiddens), optional
+            Weight matrix, where n_inputs in the number of input
+            units and n_hiddens is the number of hidden units.
+        b : array-like, shape (n_hiddens,), optional
+            Biases of the hidden units
+        c : array-like, shape (n_inputs,), optional
+            Biases of the input units
         batch_size : int, optional
             Number of examples to use per gradient update
         epochs : int, optional
             Number of epochs to perform during learning
         """
         self.n_hiddens = n_hiddens
-        self.W = W
-        self.c = c
-        self.b = b
-        self.learning_rate = learning_rate
         self.jacobi_penalty = jacobi_penalty
+        self.W = W
+        self.b = b
+        self.c = c
         self.batch_size = batch_size
         self.epochs = epochs
-    
+
     def _sigmoid(self, x):
         """
         Implements the logistic function.
@@ -81,7 +77,7 @@ class CAE(object):
         x_new: array-like, shape (M, N)
         """
         return 1. / (1. + numpy.exp(-x)) 
-    
+
     def encode(self, x):
         """
         Computes the hidden code for the input {\bf x}.
@@ -94,8 +90,8 @@ class CAE(object):
         -------
         h: array-like, shape (n_examples, n_hiddens)
         """
-        return self._sigmoid(numpy.dot(x, self.W) + self.c)
-    
+        return self._sigmoid(numpy.dot(x, self.W) + self.b)
+
     def decode(self, h):
         """
         Compute the reconstruction from the hidden code {\bf h}.
@@ -108,8 +104,8 @@ class CAE(object):
         -------
         x: array-like, shape (n_examples, n_inputs)
         """
-        return self._sigmoid(numpy.dot(h, self.W.T) + self.b)
-    
+        return self._sigmoid(numpy.dot(h, self.W.T) + self.c)
+
     def reconstruct(self, x):
         """
         Compute the reconstruction of the input {\bf x}.
@@ -123,7 +119,7 @@ class CAE(object):
         x_new: array-like, shape (n_examples, n_inputs)
         """
         return self.decode(self.encode(x))
-    
+
     def jacobian(self, x):
         """
         Compute jacobian of {\bf h} with respect to {\bf x}.
@@ -139,7 +135,7 @@ class CAE(object):
         h = self.encode(x)
         
         return (h * (1 - h))[:, :, None] * self.W.T
-    
+
     def sample(self, x, sigma=1):
         """
         Sample a point {\bf y} starting from {\bf x} using the CAE
@@ -165,7 +161,7 @@ class CAE(object):
         delta = (alpha[:, :, None] * JJ).sum(1)
         
         return self.decode(h + delta)
-    
+
     def loss(self, x):
         """
         Computes the error of the model with respect
@@ -199,8 +195,8 @@ class CAE(object):
             return (j**2).sum(2).sum(1).mean()
 
         return _reconstruction_loss() + self.jacobi_penalty * _jacobi_loss()
-    
-    def _fit(self, x):
+
+    def _loss_jacobian(self, x):
         """
         Perform one step of gradient descent on the CAE objective using the
         examples {\bf x}.
@@ -209,7 +205,7 @@ class CAE(object):
         ----------
         x: array-like, shape (n_examples, n_inputs)
         """
-        def _fit_contraction():
+        def _contraction_jacobian():
             """
             Compute the gradient of the contraction cost w.r.t parameters.
             """
@@ -225,7 +221,7 @@ class CAE(object):
 
             return (b + c), d.mean(0)
             
-        def _fit_reconstruction():
+        def _reconstruction_jabocian():
             """                                                                 
             Compute the gradient of the reconstruction cost w.r.t parameters.      
             """
@@ -240,12 +236,13 @@ class CAE(object):
 
             return (dd + de), dr.sum(0), dh.sum(0)
 
-        W_rec, b_rec, c_rec = _fit_reconstruction()
-        W_jac, c_jac = _fit_contraction()
-        self.W -= self.learning_rate * (W_rec + self.jacobi_penalty * W_jac)
-        self.c -= self.learning_rate * (c_rec + self.jacobi_penalty * c_jac)
-        self.b -= self.learning_rate * b_rec
-
+        W_rec, cp, b_rec = _reconstruction_jacobian()
+        W_con, b_con = _contraction_jacobian()
+        
+        Wp = (W_rec + self.jacobi_penalty * W_con).flatten()
+        bp = (b_rec + self.jacobi_penalty * b_con)
+        
+        return numpy.concatenate((Wp, bp, cp))
 
     def fit(self, X, verbose=False):
         """
@@ -271,9 +268,29 @@ class CAE(object):
         
         n_batches = len(inds) / self.batch_size
         
+        def _get_params():
+          return numpy.concatenate((self.W.flatten(), self.b, self.c))
+        
+        def _set_params(params):
+          self.W = params[:self.W.shape[0]*self.W.shape[1]].reshape(
+            self.W.shape[0], self.W.shape[1])
+          self.b = params[self.W.shape[0]*self.W.shape[1]:-self.W.shape[0]]
+          self.c = params[-self.W.shape[0]:]
+        
+        def _loss_helper(params, X):
+          _set_params(params)
+          return self.loss(X)
+        
+        def _loss_jacobian_helper(params, X):
+          _set_params(params)
+          return self.loss(X)
+        
         for epoch in range(self.epochs):
             for minibatch in range(n_batches):
-                self._fit(X[inds[minibatch::n_batches]])
+                params = scipy.optimize.fmin_cg(_loss_helper, _get_params(),
+                  _loss_jacobian_helper, (X[inds[minibatch::n_batches]],),
+                  maxiter=1, disp=0)
+                _set_params(params)
             
             if verbose:
                 loss = self.loss(X).mean()
