@@ -221,7 +221,7 @@ class CAE(object):
 
             return (b + c), d.mean(0)
             
-        def _reconstruction_jabocian():
+        def _reconstruction_jacobian():
             """                                                                 
             Compute the gradient of the reconstruction cost w.r.t parameters.      
             """
@@ -283,7 +283,7 @@ class CAE(object):
         
         def _loss_jacobian_helper(params, X):
           _set_params(params)
-          return self.loss(X)
+          return self._loss_jacobian(X)
         
         for epoch in range(self.epochs):
             for minibatch in range(n_batches):
@@ -294,8 +294,8 @@ class CAE(object):
             
             if verbose:
                 loss = self.loss(X).mean()
-                sys.stdout.flush()
                 print "Epoch %d, Loss = %.2f" % (epoch, loss)
+                sys.stdout.flush()
 
 
 def main():
