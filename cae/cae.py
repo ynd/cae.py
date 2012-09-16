@@ -174,25 +174,22 @@ class CAE(object):
         -------
         loss: array-like, shape (n_examples,)
         """
+        h = self.encode(x)
         def _reconstruction_loss():
             """
             Computes the error of the model with respect
-            
             to the reconstruction (cross-entropy) cost.
-            
             """
-            z = self.reconstruct(x)
+            z = self.decode(h)
             return (- (x * numpy.log(z) + (1 - x) * numpy.log(1 - z)).sum(1)).mean()
 
         def _jacobi_loss():
             """
             Computes the error of the model with respect
-            
             the Frobenius norm of the jacobian.
-            
             """
-            j = self.jacobian(x)
-            return (j**2).sum(2).sum(1).mean()
+            j = (h * (1 - h)).sum(0)[:, None] * self.W.T
+            return (j**2).sum() / x.shape[0]
 
         return _reconstruction_loss() + self.jacobi_penalty * _jacobi_loss()
 
@@ -225,7 +222,6 @@ class CAE(object):
             """                                                                 
             Compute the gradient of the reconstruction cost w.r.t parameters.      
             """
-
             h = self.encode(x)
             r = self.decode(h)
 
