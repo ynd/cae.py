@@ -162,28 +162,34 @@ class CAE(object):
         
         return self.decode(h + delta)
 
-    def loss(self, x):
+    def loss(self, x, h=None, r=None):
         """
         Computes the error of the model with respect
         to the total cost.
         
         -------
         x: array-like, shape (n_examples, n_inputs)
+        h: array-like, shape (n_examples, n_hiddens)
+        r: array-like, shape (n_examples, n_inputs)
         
         Returns
         -------
         loss: array-like, shape (n_examples,)
         """
-        h = self.encode(x)
-        def _reconstruction_loss():
+        if h == None:
+            h = self.encode(x)
+        
+        def _reconstruction_loss(h, r):
             """
             Computes the error of the model with respect
             to the reconstruction (cross-entropy) cost.
             """
-            z = self.decode(h)
-            return (- (x * numpy.log(z) + (1 - x) * numpy.log(1 - z)).sum(1)).mean()
+            if r == None:
+                r = self.decode(h)
+            return (- (x * numpy.log(r)
+                + (1 - x) * numpy.log(1 - r)).sum(1)).mean()
 
-        def _jacobi_loss():
+        def _jacobi_loss(h):
             """
             Computes the error of the model with respect
             the Frobenius norm of the jacobian.
@@ -191,7 +197,8 @@ class CAE(object):
             j = (h * (1 - h)).sum(0)[:, None] * self.W.T
             return (j**2).sum() / x.shape[0]
 
-        return _reconstruction_loss() + self.jacobi_penalty * _jacobi_loss()
+        return (_reconstruction_loss(h, r)
+            + self.jacobi_penalty * _jacobi_loss(h))
 
     def _loss_jacobian(self, x):
         """
@@ -202,12 +209,12 @@ class CAE(object):
         ----------
         x: array-like, shape (n_examples, n_inputs)
         """
+        h = self.encode(x)
+        r = self.decode(h)
         def _contraction_jacobian():
             """
             Compute the gradient of the contraction cost w.r.t parameters.
             """
-            h = self.encode(x)
-
             a = (h * (1 - h))**2 
 
             d = ((1 - 2 * h) * a * (self.W**2).sum(0)[None, :])
@@ -222,9 +229,6 @@ class CAE(object):
             """                                                                 
             Compute the gradient of the reconstruction cost w.r.t parameters.      
             """
-            h = self.encode(x)
-            r = self.decode(h)
-
             dr = (r - x) / x.shape[0]
             dd = numpy.dot(dr.T, h)
             dh = numpy.dot(dr, self.W) * h * (1. - h)
@@ -238,9 +242,9 @@ class CAE(object):
         Wp = (W_rec + self.jacobi_penalty * W_con).flatten()
         bp = (b_rec + self.jacobi_penalty * b_con)
         
-        return numpy.concatenate((Wp, bp, cp))
+        return self.loss(x, h, r), numpy.concatenate((Wp, bp, cp))
 
-    def fit(self, X, verbose=False):
+    def fit(self, X, verbose=False, callback=None):
         """
         Fit the model to the data X.
         
@@ -273,25 +277,24 @@ class CAE(object):
           self.b = params[self.W.shape[0]*self.W.shape[1]:-self.W.shape[0]]
           self.c = params[-self.W.shape[0]:]
         
-        def _loss_helper(params, X):
-          _set_params(params)
-          return self.loss(X)
-        
         def _loss_jacobian_helper(params, X):
           _set_params(params)
           return self._loss_jacobian(X)
         
         for epoch in range(self.epochs):
             for minibatch in range(n_batches):
-                params = scipy.optimize.fmin_cg(_loss_helper, _get_params(),
-                  _loss_jacobian_helper, (X[inds[minibatch::n_batches]],),
-                  maxiter=1, disp=0)
+                params = scipy.optimize.fmin_l_bfgs_b(_loss_jacobian_helper,
+                  _get_params(), args=(X[inds[minibatch::n_batches]],),
+                  maxfun=10)[0]
                 _set_params(params)
             
             if verbose:
                 loss = self.loss(X).mean()
                 print "Epoch %d, Loss = %.2f" % (epoch, loss)
                 sys.stdout.flush()
+            
+            if callback != None:
+                callback(epoch)
 
 
 def main():
