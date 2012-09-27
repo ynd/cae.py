@@ -29,6 +29,7 @@ class CAE(object):
     def __init__(self, 
                  n_hiddens=1024,
                  jacobi_penalty=0.1,
+                 learning_rate=0.1,
                  W=None,
                  b=None,
                  c=None,
@@ -44,6 +45,8 @@ class CAE(object):
         jacobi_penalty : float, optional
             Scalar by which to multiply the gradients coming from the jacobian
             penalty.
+        learning_rate : float, optional
+            Learning rate to use during learning
         W : array-like, shape (n_inputs, n_hiddens), optional
             Weight matrix, where n_inputs in the number of input
             units and n_hiddens is the number of hidden units.
@@ -58,6 +61,7 @@ class CAE(object):
         """
         self.n_hiddens = n_hiddens
         self.jacobi_penalty = jacobi_penalty
+        self.learning_rate = learning_rate
         self.W = W
         self.b = b
         self.c = c
@@ -169,8 +173,8 @@ class CAE(object):
         
         -------
         x: array-like, shape (n_examples, n_inputs)
-        h: array-like, shape (n_examples, n_hiddens)
-        r: array-like, shape (n_examples, n_inputs)
+        h: array-like, shape (n_examples, n_hiddens), optional
+        r: array-like, shape (n_examples, n_inputs), optional
         
         Returns
         -------
@@ -200,7 +204,7 @@ class CAE(object):
         return (_reconstruction_loss(h, r)
             + self.jacobi_penalty * _jacobi_loss(h))
 
-    def _loss_jacobian(self, x):
+    def _fit(self, x):
         """
         Perform one step of gradient descent on the CAE objective using the
         examples {\bf x}.
@@ -208,6 +212,11 @@ class CAE(object):
         Parameters
         ----------
         x: array-like, shape (n_examples, n_inputs)
+        
+        Parameters
+        ----------
+        loss: array-like, shape (n_examples,)
+            Value of the loss function for each example before the step.
         """
         h = self.encode(x)
         r = self.decode(h)
@@ -236,13 +245,14 @@ class CAE(object):
 
             return (dd + de), dr.sum(0), dh.sum(0)
 
-        W_rec, cp, b_rec = _reconstruction_jacobian()
+        W_rec, c_rec, b_rec = _reconstruction_jacobian()
         W_con, b_con = _contraction_jacobian()
         
-        Wp = (W_rec + self.jacobi_penalty * W_con).flatten()
-        bp = (b_rec + self.jacobi_penalty * b_con)
+        self.W -= self.learning_rate * (W_rec + self.jacobi_penalty * W_con)
+        self.b -= self.learning_rate * (b_rec + self.jacobi_penalty * b_con)
+        self.c -= self.learning_rate * c_rec
         
-        return self.loss(x, h, r), numpy.concatenate((Wp, bp, cp))
+        return self.loss(x, h, r)
 
     def fit(self, X, verbose=False, callback=None):
         """
@@ -259,8 +269,8 @@ class CAE(object):
                 low=-4*numpy.sqrt(6./(X.shape[1]+self.n_hiddens)),
                 high=4*numpy.sqrt(6./(X.shape[1]+self.n_hiddens)),
                 size=(X.shape[1], self.n_hiddens))
-            self.c = numpy.zeros(self.n_hiddens)
-            self.b = numpy.zeros(X.shape[1])
+            self.b = numpy.zeros(self.n_hiddens)
+            self.c = numpy.zeros(X.shape[1])
         
         inds = range(X.shape[0])
         
@@ -268,29 +278,13 @@ class CAE(object):
         
         n_batches = len(inds) / self.batch_size
         
-        def _get_params():
-          return numpy.concatenate((self.W.flatten(), self.b, self.c))
-        
-        def _set_params(params):
-          self.W = params[:self.W.shape[0]*self.W.shape[1]].reshape(
-            self.W.shape[0], self.W.shape[1])
-          self.b = params[self.W.shape[0]*self.W.shape[1]:-self.W.shape[0]]
-          self.c = params[-self.W.shape[0]:]
-        
-        def _loss_jacobian_helper(params, X):
-          _set_params(params)
-          return self._loss_jacobian(X)
-        
         for epoch in range(self.epochs):
+            loss = 0.
             for minibatch in range(n_batches):
-                params = scipy.optimize.fmin_l_bfgs_b(_loss_jacobian_helper,
-                  _get_params(), args=(X[inds[minibatch::n_batches]],),
-                  maxfun=10)[0]
-                _set_params(params)
+                loss += self._fit(X[inds[minibatch::n_batches]]).sum()
             
             if verbose:
-                loss = self.loss(X).mean()
-                print "Epoch %d, Loss = %.2f" % (epoch, loss)
+                print "Epoch %d, Loss = %.2f" % (epoch, loss / len(inds))
                 sys.stdout.flush()
             
             if callback != None:
