@@ -178,14 +178,14 @@ class CAE(object):
         """
         if h == None:
             h = self.encode(x)
+        if r == None:
+            r = self.decode(h)
         
         def _reconstruction_loss(h, r):
             """
             Computes the error of the model with respect
             to the reconstruction (cross-entropy) cost.
             """
-            if r == None:
-                r = self.decode(h)
             return (- (x * numpy.log(r)
                 + (1 - x) * numpy.log(1 - r)).sum(1)).mean()
 
@@ -194,8 +194,7 @@ class CAE(object):
             Computes the error of the model with respect
             the Frobenius norm of the jacobian.
             """
-            j = (h * (1 - h)).sum(0)[:, None] * self.W.T
-            return (j**2).sum() / x.shape[0]
+            return (((h * (1 - h))**2).sum(0) * self.W**2).sum() / x.shape[0]
 
         return (_reconstruction_loss(h, r)
             + self.jacobi_penalty * _jacobi_loss(h))
@@ -255,12 +254,12 @@ class CAE(object):
             and n_inputs is the number of features.
         """
         if self.W == None:
-            self.W = numpy.random.uniform(
+            self.W = numpy.asarray(numpy.random.uniform(
                 low=-4*numpy.sqrt(6./(X.shape[1]+self.n_hiddens)),
                 high=4*numpy.sqrt(6./(X.shape[1]+self.n_hiddens)),
-                size=(X.shape[1], self.n_hiddens))
-            self.c = numpy.zeros(self.n_hiddens)
-            self.b = numpy.zeros(X.shape[1])
+                size=(X.shape[1], self.n_hiddens)), dtype=X.dtype)
+            self.b = numpy.zeros(self.n_hiddens, dtype=X.dtype)
+            self.c = numpy.zeros(X.shape[1], dtype=X.dtype)
         
         inds = range(X.shape[0])
         
@@ -269,23 +268,23 @@ class CAE(object):
         n_batches = len(inds) / self.batch_size
         
         def _get_params():
-          return numpy.concatenate((self.W.flatten(), self.b, self.c))
+            return numpy.concatenate((self.W.flatten(), self.b, self.c))
         
         def _set_params(params):
-          self.W = params[:self.W.shape[0]*self.W.shape[1]].reshape(
-            self.W.shape[0], self.W.shape[1])
-          self.b = params[self.W.shape[0]*self.W.shape[1]:-self.W.shape[0]]
-          self.c = params[-self.W.shape[0]:]
+            self.W = params[:self.W.shape[0]*self.W.shape[1]].reshape(
+                self.W.shape[0], self.W.shape[1])
+            self.b = params[self.W.shape[0]*self.W.shape[1]:-self.W.shape[0]]
+            self.c = params[-self.W.shape[0]:]
         
         def _loss_jacobian_helper(params, X):
-          _set_params(params)
-          return self._loss_jacobian(X)
+            _set_params(params)
+            return self._loss_jacobian(X)
         
         for epoch in range(self.epochs):
             for minibatch in range(n_batches):
                 params = scipy.optimize.fmin_l_bfgs_b(_loss_jacobian_helper,
                   _get_params(), args=(X[inds[minibatch::n_batches]],),
-                  maxfun=10)[0]
+                  maxfun=20)[0]
                 _set_params(params)
             
             if verbose:
