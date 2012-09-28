@@ -265,12 +265,12 @@ class CAE(object):
             and n_inputs is the number of features.
         """
         if self.W == None:
-            self.W = numpy.random.uniform(
+            self.W = numpy.asarray(numpy.random.uniform(
                 low=-4*numpy.sqrt(6./(X.shape[1]+self.n_hiddens)),
                 high=4*numpy.sqrt(6./(X.shape[1]+self.n_hiddens)),
-                size=(X.shape[1], self.n_hiddens))
-            self.b = numpy.zeros(self.n_hiddens)
-            self.c = numpy.zeros(X.shape[1])
+                size=(X.shape[1], self.n_hiddens)), dtype=X.dtype)
+            self.b = numpy.zeros(self.n_hiddens, dtype=X.dtype)
+            self.c = numpy.zeros(X.shape[1], dtype=X.dtype)
         
         inds = range(X.shape[0])
         
