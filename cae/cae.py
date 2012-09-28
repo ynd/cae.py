@@ -33,7 +33,7 @@ class CAE(object):
                  W=None,
                  b=None,
                  c=None,
-                 batch_size=1000,
+                 batch_size=20,
                  epochs=1):
         """
         Initialize a CAE.
@@ -192,15 +192,14 @@ class CAE(object):
             to the reconstruction (cross-entropy) cost.
             """
             return (- (x * numpy.log(r)
-                + (1 - x) * numpy.log(1 - r)).sum(1)).mean()
+                + (1 - x) * numpy.log(1 - r)).sum(1)).sum()
 
         def _jacobi_loss(h):
             """
             Computes the error of the model with respect
             the Frobenius norm of the jacobian.
             """
-            j = (h * (1 - h)).sum(0)[:, None] * self.W.T
-            return (j**2).sum() / x.shape[0]
+            return (((h * (1 - h))**2).sum(0) * self.W**2).sum()
 
         return (_reconstruction_loss(h, r)
             + self.jacobi_penalty * _jacobi_loss(h))
@@ -282,7 +281,7 @@ class CAE(object):
         for epoch in range(self.epochs):
             loss = 0.
             for minibatch in range(n_batches):
-                loss += self._fit(X[inds[minibatch::n_batches]]).sum()
+                loss += self._fit(X[inds[minibatch::n_batches]])
             
             if verbose:
                 print "Epoch %d, Loss = %.2f" % (epoch, loss / len(inds))
