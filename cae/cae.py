@@ -171,7 +171,8 @@ class CAE(object):
         Computes the error of the model with respect
         to the total cost.
         
-        -------
+        Parameters
+        ----------
         x: array-like, shape (n_examples, n_inputs)
         h: array-like, shape (n_examples, n_hiddens), optional
         r: array-like, shape (n_examples, n_inputs), optional
@@ -182,14 +183,14 @@ class CAE(object):
         """
         if h == None:
             h = self.encode(x)
+        if r == None:
+            r = self.decode(h)
         
         def _reconstruction_loss(h, r):
             """
             Computes the error of the model with respect
             to the reconstruction (cross-entropy) cost.
             """
-            if r == None:
-                r = self.decode(h)
             return (- (x * numpy.log(r)
                 + (1 - x) * numpy.log(1 - r)).sum(1)).mean()
 
@@ -233,7 +234,7 @@ class CAE(object):
             c = a.mean(0) * self.W
 
             return (b + c), d.mean(0)
-            
+        
         def _reconstruction_jacobian():
             """                                                                 
             Compute the gradient of the reconstruction cost w.r.t parameters.      
