@@ -34,7 +34,7 @@ class CAE(object):
                  b=None,
                  c=None,
                  batch_size=20,
-                 epochs=1):
+                 epochs=20):
         """
         Initialize a CAE.
         
