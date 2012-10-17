@@ -23,7 +23,7 @@ import scipy.optimize
 
 class CAE(object):
     """
-    A Contrative Auto-Encoder (CAE) with sigmoid input units and sigmoid
+    A Contractive Auto-Encoder (CAE) with sigmoid input units and sigmoid
     hidden units.
     """
     def __init__(self, 
